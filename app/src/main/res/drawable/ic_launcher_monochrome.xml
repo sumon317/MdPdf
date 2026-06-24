@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Document Outline -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M34,27 L64,27 L74,37 L74,81 L34,81 Z" />
+
+    <!-- Markdown Symbol (Cutout) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,42 L40,54 L42,54 L42,46 L45,49 L48,46 L48,54 L50,54 L50,42 L47,42 L45,45 L43,42 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42 L54,50 L52,50 L55,54 L58,50 L56,50 L56,42 Z" />
+
+    <!-- PDF Text (Cutout) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,73 L42,79 L43.5,79 L43.5,77 L45,77 C46.5,77 47.5,76 47.5,75 C47.5,74 46.5,73 45,73 Z M43.5,74 L45,74 C45.8,74 46,74.3 46,75 C46,75.7 45.8,76 45,76 L43.5,76 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,73 L50,79 L53,79 C55.5,79 56.5,77.5 56.5,76 C56.5,74.5 55.5,73 53,73 Z M51.5,74.2 L53,74.2 C54.5,74.2 55,75 55,76 C55,77 54.5,77.8 53,77.8 L51.5,77.8 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M59,73 L59,79 L60.5,79 L60.5,76.5 L62.5,76.5 L62.5,75.3 L60.5,75.3 L60.5,74.2 L63,74.2 L63,73 Z" />
+
+</vector>
