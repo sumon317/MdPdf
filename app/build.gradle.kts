@@ -22,11 +22,7 @@ android {
 
     buildTypes {
         debug {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = false
         }
         release {
             isMinifyEnabled = true
@@ -54,7 +50,11 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
 
     // AndroidX
     implementation(libs.androidx.appcompat)
@@ -65,6 +65,9 @@ dependencies {
     implementation(libs.commonmark)
     implementation(libs.commonmark.ext.gfm.tables)
     implementation(libs.commonmark.ext.gfm.strikethrough)
+
+    // DocumentFile for SAF tree access
+    implementation(libs.documentfile)
 
     // Debug
     debugImplementation(libs.compose.ui.tooling)

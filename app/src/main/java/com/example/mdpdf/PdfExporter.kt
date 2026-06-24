@@ -7,72 +7,134 @@ import android.graphics.Canvas
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.util.Log
-import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import java.util.concurrent.atomic.AtomicBoolean
 
 class PdfExporter(private val context: Context) {
 
-    fun export(htmlContent: String, uri: Uri, onResult: ((Throwable?) -> Unit)? = null) {
+    fun export(
+        htmlContent: String,
+        uri: Uri,
+        onProgress: ((Int, Int) -> Unit)? = null,
+        onResult: ((Throwable?) -> Unit)? = null
+    ) {
+        val activity = context as? Activity
+        if (activity == null) {
+            onResult?.invoke(Exception("Export requires an Activity context"))
+            return
+        }
+
+        val env = ExportEnv(htmlContent, uri, activity, onProgress, onResult)
+
+        val lifecycle = (activity as? LifecycleOwner)?.lifecycle
+        val observer = object : LifecycleEventObserver {
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                if (event == Lifecycle.Event.ON_DESTROY) {
+                    if (env.isCancelled.compareAndSet(false, true)) {
+                        cleanup(env, null)
+                        env.onResult?.invoke(Exception("Activity destroyed during export"))
+                    }
+                }
+            }
+        }
+        env.lifecycle = lifecycle
+        env.observer = observer
+        lifecycle?.addObserver(observer)
+
         try {
-            doExport(htmlContent, uri, onResult)
+            runExport(env)
         } catch (e: Throwable) {
             Log.e("PdfExporter", "Export failed", e)
-            onResult?.invoke(e)
+            if (env.isCancelled.compareAndSet(false, true)) {
+                cleanup(env, null)
+                onResult?.invoke(e)
+            }
         }
     }
 
-    private fun doExport(
-        htmlContent: String,
-        uri: Uri,
-        onResult: ((Throwable?) -> Unit)?
-    ) {
-        val density = context.resources.displayMetrics.density
+    private class ExportEnv(
+        val htmlContent: String,
+        val uri: Uri,
+        val activity: Activity,
+        val onProgress: ((Int, Int) -> Unit)?,
+        val onResult: ((Throwable?) -> Unit)?,
+        val isCancelled: AtomicBoolean = AtomicBoolean(false),
+        var lifecycle: Lifecycle? = null,
+        var observer: LifecycleEventObserver? = null,
+        var webView: WebView? = null
+    )
+
+    private fun runExport(env: ExportEnv) {
+        val density = 2.0f
         val pageWidthPx = (595f * density).toInt()
         val pageHeightPx = (842f * density).toInt()
+        val filesDir = env.activity.filesDir.absolutePath
+        val baseUrl = "file://$filesDir/"
 
-        val webView = WebView(context.applicationContext).apply {
-            layout(0, 0, pageWidthPx, pageHeightPx)
+        val webView = WebView(env.activity).apply {
+            layoutParams = ViewGroup.LayoutParams(pageWidthPx, pageHeightPx)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.useWideViewPort = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = false
+            @Suppress("DEPRECATION")
+            settings.allowFileAccessFromFileURLs = false
+            @Suppress("DEPRECATION")
+            settings.allowUniversalAccessFromFileURLs = false
             setBackgroundColor(0xFFFFFFFF.toInt())
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            visibility = View.INVISIBLE
+            alpha = 0f
+        }
+        env.webView = webView
+
+        if (env.isCancelled.get()) {
+            cleanup(env, webView)
+            return
         }
 
-        if (context is Activity) {
-            val decor = context.window.decorView as? ViewGroup
-            decor?.addView(webView, ViewGroup.LayoutParams(pageWidthPx, pageHeightPx))
-        }
+        val decor = env.activity.window.decorView as? ViewGroup
+        decor?.addView(webView)
 
+        var started = false
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
+                if (started) return
+                started = true
                 view.postDelayed({
-                    measureAndCapture(webView, pageWidthPx, pageHeightPx, uri, onResult)
+                    if (!env.isCancelled.get()) {
+                        measureAndCapture(env, webView, pageWidthPx, pageHeightPx)
+                    }
                 }, 5000)
             }
         }
 
-        webView.loadDataWithBaseURL("", htmlContent, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL(baseUrl, env.htmlContent, "text/html", "UTF-8", null)
     }
 
     private fun measureAndCapture(
+        env: ExportEnv,
         webView: WebView,
         pageWidthPx: Int,
-        pageHeightPx: Int,
-        uri: Uri,
-        onResult: ((Throwable?) -> Unit)?
+        pageHeightPx: Int
     ) {
+        if (env.isCancelled.get()) return
         webView.evaluateJavascript(
-            "document.body.scrollHeight * window.devicePixelRatio"
+            "document.body.scrollHeight"
         ) { heightStr ->
+            if (env.isCancelled.get()) return@evaluateJavascript
             val contentHeightPx = heightStr?.trim('"', '\'')?.toFloatOrNull()?.toInt() ?: pageHeightPx
             if (contentHeightPx <= 0) {
-                onResult?.invoke(Exception("Invalid content height"))
-                cleanup(webView)
+                if (env.isCancelled.compareAndSet(false, true)) {
+                    cleanup(env, webView)
+                    env.onResult?.invoke(Exception("Invalid content height: $heightStr"))
+                }
                 return@evaluateJavascript
             }
 
@@ -80,80 +142,152 @@ class PdfExporter(private val context: Context) {
             Log.d("PdfExporter", "contentHeight=$contentHeightPx pageCount=$pageCount")
 
             val document = PdfDocument()
-            capturePage(webView, 0, pageCount, pageWidthPx, pageHeightPx, pageHeightPx, document, uri, onResult)
+            env.onProgress?.invoke(0, pageCount)
+            capturePage(env, webView, 0, pageCount, pageWidthPx, pageHeightPx, document)
         }
     }
 
     private fun capturePage(
+        env: ExportEnv,
         webView: WebView,
         index: Int,
         pageCount: Int,
         pageWidthPx: Int,
         pageHeightPx: Int,
-        viewportHeightPx: Int,
-        document: PdfDocument,
-        uri: Uri,
-        onResult: ((Throwable?) -> Unit)?
+        document: PdfDocument
     ) {
+        if (env.isCancelled.get()) {
+            document.close()
+            return
+        }
         if (index >= pageCount) {
-            finish(webView, document, uri, onResult)
+            finish(env, webView, document)
             return
         }
 
         val scrollY = index * pageHeightPx
         webView.scrollTo(0, scrollY)
+        scheduleCapture(env, webView, index, pageCount, pageWidthPx, pageHeightPx, document)
+    }
+
+    private fun scheduleCapture(
+        env: ExportEnv,
+        webView: WebView,
+        index: Int,
+        pageCount: Int,
+        pageWidthPx: Int,
+        pageHeightPx: Int,
+        document: PdfDocument
+    ) {
+        if (env.isCancelled.get()) {
+            document.close()
+            return
+        }
+        val done = AtomicBoolean(false)
+        val id = System.nanoTime()
+
+        webView.postVisualStateCallback(id, object : WebView.VisualStateCallback() {
+            override fun onComplete(callbackId: Long) {
+                if (callbackId != id) return
+                if (env.isCancelled.get()) {
+                    document.close()
+                    return
+                }
+                if (!done.compareAndSet(false, true)) return
+                doCapture(env, webView, index, pageCount, pageWidthPx, pageHeightPx, document)
+            }
+        })
 
         webView.postDelayed({
-            try {
-                // Capture the current viewport into a bitmap
-                val bitmap = Bitmap.createBitmap(pageWidthPx, viewportHeightPx, Bitmap.Config.ARGB_8888)
-                val bitmapCanvas = Canvas(bitmap)
-
-                // Move the canvas to capture the right slice.
-                // webView.draw() renders at the view's origin, shifted by scroll offset internally.
-                webView.draw(bitmapCanvas)
-
-                // Create the PDF page and draw the captured bitmap onto it
-                val pageInfo = PdfDocument.PageInfo.Builder(pageWidthPx, pageHeightPx, index + 1).create()
-                val page = document.startPage(pageInfo)
-                page.canvas.drawBitmap(bitmap, 0f, 0f, null)
-                document.finishPage(page)
-                bitmap.recycle()
-            } catch (e: Throwable) {
-                Log.e("PdfExporter", "Page $index failed", e)
-                finish(webView, document, uri, onResult)
+            if (env.isCancelled.get()) {
+                document.close()
                 return@postDelayed
             }
-            capturePage(webView, index + 1, pageCount, pageWidthPx, pageHeightPx, viewportHeightPx, document, uri, onResult)
-        }, 400L)
+            if (done.compareAndSet(false, true)) {
+                Log.w("PdfExporter", "postVisualStateCallback timeout, using fallback")
+                doCapture(env, webView, index, pageCount, pageWidthPx, pageHeightPx, document)
+            }
+        }, 2000L)
+    }
+
+    private fun doCapture(
+        env: ExportEnv,
+        webView: WebView,
+        index: Int,
+        pageCount: Int,
+        pageWidthPx: Int,
+        pageHeightPx: Int,
+        document: PdfDocument
+    ) {
+        if (env.isCancelled.get()) {
+            document.close()
+            return
+        }
+        try {
+            val bitmap = Bitmap.createBitmap(pageWidthPx, pageHeightPx, Bitmap.Config.ARGB_8888)
+            val bitmapCanvas = Canvas(bitmap)
+            webView.draw(bitmapCanvas)
+
+            val pageInfo = PdfDocument.PageInfo.Builder(pageWidthPx, pageHeightPx, index + 1).create()
+            val page = document.startPage(pageInfo)
+            page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+            document.finishPage(page)
+            bitmap.recycle()
+
+            env.onProgress?.invoke(index + 1, pageCount)
+        } catch (e: Throwable) {
+            Log.e("PdfExporter", "Page $index failed", e)
+            if (env.isCancelled.compareAndSet(false, true)) {
+                document.close()
+                cleanup(env, webView)
+                env.onResult?.invoke(e)
+            }
+            return
+        }
+        capturePage(env, webView, index + 1, pageCount, pageWidthPx, pageHeightPx, document)
     }
 
     private fun finish(
+        env: ExportEnv,
         webView: WebView,
-        document: PdfDocument,
-        uri: Uri,
-        onResult: ((Throwable?) -> Unit)?
+        document: PdfDocument
     ) {
-        try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                document.writeTo(output)
+        if (env.isCancelled.compareAndSet(false, true)) {
+            try {
+                env.activity.contentResolver.openOutputStream(env.uri)?.use { output ->
+                    document.writeTo(output)
+                }
+                Log.d("PdfExporter", "PDF saved to ${env.uri}")
+                env.onResult?.invoke(null)
+            } catch (e: Throwable) {
+                Log.e("PdfExporter", "Write failed", e)
+                env.onResult?.invoke(e)
+            } finally {
+                document.close()
+                cleanup(env, webView)
             }
-            Log.d("PdfExporter", "PDF saved to $uri")
-            onResult?.invoke(null)
-        } catch (e: Throwable) {
-            Log.e("PdfExporter", "Write failed", e)
-            onResult?.invoke(e)
-        } finally {
+        } else {
             document.close()
-            cleanup(webView)
         }
     }
 
-    private fun cleanup(webView: WebView) {
+    private fun cleanup(env: ExportEnv, webView: WebView?) {
         try {
-            val parent = webView.parent as? ViewGroup
-            parent?.removeView(webView)
-            webView.destroy()
+            env.lifecycle?.let { lf ->
+                env.observer?.let { obs ->
+                    lf.removeObserver(obs)
+                }
+            }
+            env.lifecycle = null
+            env.observer = null
+
+            val wv = webView ?: env.webView
+            if (wv != null) {
+                val parent = wv.parent as? ViewGroup
+                parent?.removeView(wv)
+                wv.destroy()
+            }
+            env.webView = null
         } catch (e: Throwable) {
             Log.w("PdfExporter", "Cleanup failed", e)
         }

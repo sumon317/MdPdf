@@ -1,0 +1,44 @@
+MdPdf — Feature List
+=====================
+
+EDITOR
+- Live preview modes: Edit, Split, View (toggle in top bar)
+- Markdown syntax highlighting in code blocks via Prism.js
+- KaTeX math rendering: inline ($...$, \(...\)) and display ($$...$$, \[...\])
+- Spellcheck toggle (IME red underlines for misspelled words)
+- Open .md / .txt files from device
+- Add images from device storage (copied to app's files dir, rendered in preview & PDF)
+- Default sample markdown covering tables, checkboxes, code blocks, math, matrices
+
+PDF EXPORT
+- A4 native PDF generation via PdfDocument + hidden WebView
+- Per-page progress dialog + system notification
+- Export to SAF-chosen location or a configurable default save folder
+- PDF themes: Default, Academic, Dark, Minimal, Pure Black
+- Code block headers with language label + copy button
+- Blockquote CSS fix (proper left-border rendering)
+- Toggle to include/exclude error messages in PDF
+- Notifications for progress, completion, and failure
+- Tap notification to open the exported PDF with the system viewer
+
+SHARING
+- Share Markdown (.md file via FileProvider)
+- Share PDF (exports to temp file, shares via FileProvider)
+
+UI
+- Material 3 design with Matcha white/light theme
+- Dark theme and Pure Black (AMOLED) theme
+- Status bar color adapts to selected theme
+- Overflow menu: Pdf Theme, Share Markdown, Share PDF, Add Image, Settings
+
+SETTINGS
+- App Theme: Light / Dark / Pure Black
+- Show errors in PDF toggle
+- Spellcheck toggle
+- Export notifications toggle
+- Default save folder picker (OpenDocumentTree)
+
+INTENT HANDLING
+- Registered as default handler for .md, .txt, and .pdf files
+- Opens markdown/text files directly in the editor
+- Opens PDF files with the system's external PDF viewer

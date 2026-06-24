@@ -9,7 +9,8 @@ enum class MdTheme(val label: String) {
     DEFAULT("Default"),
     ACADEMIC("Academic"),
     DARK("Dark"),
-    MINIMAL("Minimal")
+    MINIMAL("Minimal"),
+    PURE_BLACK("Pure Black")
 }
 
 class MarkdownParser {
@@ -29,6 +30,8 @@ class MarkdownParser {
 
     private val htmlRenderer = HtmlRenderer.builder()
         .extensions(extensions)
+        .escapeHtml(true)
+        .sanitizeUrls(true)
         .build()
 
     private fun extractAndProtectMath(markdown: String): Pair<String, List<String>> {
@@ -48,52 +51,61 @@ class MarkdownParser {
         return result
     }
 
-    fun toHtml(markdown: String, theme: MdTheme = MdTheme.DEFAULT): String {
+    fun toHtml(markdown: String, theme: MdTheme = MdTheme.DEFAULT, showErrors: Boolean = true): String {
         val (clean, blocks) = extractAndProtectMath(markdown)
         val document = parser.parse(clean)
         val bodyHtml = htmlRenderer.render(document)
         val restored = restoreMath(bodyHtml, blocks)
-        return wrapWithTemplate(restored, theme, isPrint = false)
+        return wrapWithTemplate(restored, theme, isPrint = false, showErrors = showErrors)
     }
 
-    fun toPrintHtml(markdown: String, theme: MdTheme = MdTheme.DEFAULT): String {
+    fun toPrintHtml(markdown: String, theme: MdTheme = MdTheme.DEFAULT, showErrors: Boolean = true): String {
         val (clean, blocks) = extractAndProtectMath(markdown)
         val document = parser.parse(clean)
         val bodyHtml = htmlRenderer.render(document)
         val restored = restoreMath(bodyHtml, blocks)
-        return wrapWithTemplate(restored, theme, isPrint = true)
+        return wrapWithTemplate(restored, theme, isPrint = true, showErrors = showErrors)
     }
 
-    private fun wrapWithTemplate(bodyHtml: String, theme: MdTheme, isPrint: Boolean): String {
+    private fun wrapWithTemplate(bodyHtml: String, theme: MdTheme, isPrint: Boolean, showErrors: Boolean): String {
         val themeCss = when (theme) {
             MdTheme.ACADEMIC -> ACADEMIC_CSS
             MdTheme.DARK -> DARK_CSS
             MdTheme.MINIMAL -> MINIMAL_CSS
+            MdTheme.PURE_BLACK -> PURE_BLACK_CSS
             MdTheme.DEFAULT -> DEFAULT_CSS
         }
         val prismTheme = when (theme) {
-            MdTheme.DARK -> "themes/prism-okaidia.min.css"
-            else -> "themes/prism.min.css"
+            MdTheme.DARK -> "prism-okaidia.min.css"
+            MdTheme.PURE_BLACK -> "prism-okaidia.min.css"
+            else -> "prism.min.css"
         }
+
+        val prismThemeUrl = "file:///android_asset/prism/themes/$prismTheme"
+        val errorHideCss = if (showErrors) "" else ".katex-error { display: none !important; }"
 
         if (isPrint) {
             return """<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=595,initial-scale=1.0"/>
-<link rel="stylesheet" href="$CDN/prism/$prismTheme"/>
+<link rel="stylesheet" href="$prismThemeUrl"/>
 <link rel="stylesheet" href="$KATEX_CSS"/>
 <style>
 $PRINT_CSS
 $themeCss
+$errorHideCss
 </style>
 </head><body>
 $bodyHtml
-<script src="$CDN/prism/prism.min.js"></script>
-<script src="$CDN/prism/plugins/autoloader/prism-autoloader.min.js"></script>
+<script src="$PRISM_JS"></script>
+<script src="$PRISM_AUTOLOADER"></script>
 <script src="$KATEX_JS"></script>
 <script src="$KATEX_AUTO_RENDER"></script>
 <script>
+if(typeof Prism!=='undefined'&&Prism.plugins&&Prism.plugins.autoloader){
+  Prism.plugins.autoloader.languages_path = 'file:///android_asset/prism/components/';
+}
 function tryRender(attempt){
 if(typeof renderMathInElement!=='undefined'&&typeof katex!=='undefined'){
 try{
@@ -110,8 +122,41 @@ window.setTimeout(function(){tryRender(attempt+1)},500)
 console.error('MdPdf: KaTeX failed to load')
 }
 }
+function addCodeHeaders(){
+var pres=document.querySelectorAll('pre[class*="language-"]');
+if(pres.length===0) pres=document.querySelectorAll('pre code[class*="language-"]');
+if(pres.length===0) pres=document.querySelectorAll('pre');
+pres.forEach(function(pre){
+if(pre.querySelector('.code-header'))return;
+var header=document.createElement('div');header.className='code-header';
+var label=document.createElement('span');label.className='lang-label';
+var code=pre.querySelector('code');
+var lang='';
+if(code&&code.className){
+var m=code.className.match(/language-(\w+)/);
+if(m) lang=m[1];
+}
+label.textContent=lang||'CODE';
+header.appendChild(label);
+var btn=document.createElement('button');btn.className='copy-btn';
+btn.textContent='Copy';
+btn.onclick=function(){
+var txt=code?code.textContent:pre.textContent;
+if(navigator.clipboard&&navigator.clipboard.writeText){
+navigator.clipboard.writeText(txt).then(function(){
+btn.textContent='Copied!';
+setTimeout(function(){btn.textContent='Copy';},2000);
+});
+}
+};
+header.appendChild(btn);
+pre.parentNode.insertBefore(header,pre);
+});
+}
+
 document.addEventListener('DOMContentLoaded',function(){
 if(typeof Prism!=='undefined'){Prism.highlightAll()}
+addCodeHeaders()
 tryRender(1)
 })
 </script>
@@ -122,19 +167,23 @@ tryRender(1)
 <html><head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<link rel="stylesheet" href="$CDN/prism/$prismTheme"/>
+<link rel="stylesheet" href="$prismThemeUrl"/>
 <link rel="stylesheet" href="$KATEX_CSS"/>
 <style>
 $COMMON_CSS
 $themeCss
+$errorHideCss
 </style>
 </head><body>
 $bodyHtml
-<script src="$CDN/prism/prism.min.js"></script>
-<script src="$CDN/prism/plugins/autoloader/prism-autoloader.min.js"></script>
+<script src="$PRISM_JS"></script>
+<script src="$PRISM_AUTOLOADER"></script>
 <script src="$KATEX_JS"></script>
 <script src="$KATEX_AUTO_RENDER"></script>
 <script>
+if(typeof Prism!=='undefined'&&Prism.plugins&&Prism.plugins.autoloader){
+  Prism.plugins.autoloader.languages_path = 'file:///android_asset/prism/components/';
+}
 console.log('MdPdf: scripts starting, katex='+typeof katex+', renderMathInElement='+typeof renderMathInElement)
 function tryRender(attempt){
 if(typeof renderMathInElement!=='undefined'&&typeof katex!=='undefined'){
@@ -164,10 +213,11 @@ window.setTimeout(function(){tryRender(1)},500)
     }
 }
 
-private val CDN = "https://cdnjs.cloudflare.com/ajax/libs"
-private val KATEX_JS = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
-private val KATEX_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
-private val KATEX_AUTO_RENDER = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+private val PRISM_JS = "file:///android_asset/prism/prism.min.js"
+private val PRISM_AUTOLOADER = "file:///android_asset/prism/prism-autoloader.min.js"
+private val KATEX_JS = "file:///android_asset/katex/katex.min.js"
+private val KATEX_CSS = "file:///android_asset/katex/katex.min.css"
+private val KATEX_AUTO_RENDER = "file:///android_asset/katex/contrib/auto-render.min.js"
 
 private val COMMON_CSS = """
 body {
@@ -185,6 +235,13 @@ code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: '
 pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; border: 1px solid #eaecef; }
 pre code { background: none; padding: 0; border-radius: 0; }
 blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px; padding: 0 16px; color: #57606a; }
+blockquote p { margin: 0 0 6px; }
+blockquote p:last-child { margin: 0; }
+.code-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; background: #e8e8e8; font-size: 12px; font-family: sans-serif; border-radius: 6px 6px 0 0; border: 1px solid #eaecef; border-bottom: none; }
+.code-header + pre { margin-top: 0; border-radius: 0 0 6px 6px; border-top: none; }
+.code-header .lang-label { color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; }
+.code-header .copy-btn { background: none; border: 1px solid #d0d7de; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: #444; }
+.code-header .copy-btn:active { background: #d0d7de; }
 table { border-collapse: collapse; width: 100%; margin: 16px 0; display: block; overflow-x: auto; }
 th, td { border: 1px solid #d0d7de; padding: 8px 12px; text-align: left; }
 th { background: #f6f8fa; font-weight: 600; }
@@ -225,6 +282,21 @@ blockquote { border-left-width: 2px; }
 table { font-size: 0.95em; }
 th, td { padding: 6px 10px; }
 """.trimIndent()
+private val PURE_BLACK_CSS = """
+body { background: #000; color: #e0e0e0; }
+h1, h2 { border-bottom-color: #333; }
+a { color: #66b3ff; }
+code { background: #111; }
+pre { background: #0a0a0a; border-color: #222; }
+blockquote { border-left-color: #66b3ff; color: #999; }
+th, td { border-color: #333; }
+th { background: #111; }
+tr:nth-child(even) { background: #0d0d0d; }
+hr { border-top-color: #333; }
+.code-header { background: #1a1a1a; border-color: #222; }
+.code-header .lang-label { color: #999; }
+.code-header .copy-btn { border-color: #444; color: #ccc; background: #1a1a1a; }
+""".trimIndent()
 private val PRINT_CSS = """
 body {
     font-family: 'Georgia', 'Times New Roman', serif;
@@ -242,6 +314,12 @@ code { background: #f0f0f0; padding: 1px 4px; font-family: 'Consolas', 'Monaco',
 pre { background: #f8f8f8; padding: 8pt 10pt; border: 0.5pt solid #ddd; overflow-x: hidden; }
 pre code { background: none; padding: 0; font-size: 9pt; }
 blockquote { border-left: 2pt solid #ccc; margin: 0.5em 0; padding: 0 10pt; color: #555; }
+blockquote p { margin: 0 0 4pt; }
+blockquote p:last-child { margin: 0; }
+.code-header { display: flex; justify-content: space-between; align-items: center; padding: 3pt 8pt; background: #eee; font-size: 8pt; font-family: 'Georgia', serif; border: 0.5pt solid #ddd; border-bottom: none; }
+.code-header + pre { margin-top: 0; border-top: none; }
+.code-header .lang-label { color: #555; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5pt; font-size: 7pt; }
+.code-header .copy-btn { background: none; border: 0.5pt solid #ccc; border-radius: 2pt; padding: 1pt 5pt; font-size: 7pt; color: #444; }
 table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
 th, td { border: 0.5pt solid #aaa; padding: 4pt 6pt; text-align: left; font-size: 10pt; }
 th { background: #eee; font-weight: 600; }
