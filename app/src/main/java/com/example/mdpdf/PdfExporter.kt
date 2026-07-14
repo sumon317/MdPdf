@@ -163,7 +163,7 @@ class PdfExporter(private val context: Context) {
                     if (!env.isCancelled.get()) {
                         measureAndCapture(env, webView, pageWidthPx, pageHeightPx)
                     }
-                }, 5000)
+                }, Constants.HTML_RENDER_TIMEOUT_MS)
             }
         }
 
