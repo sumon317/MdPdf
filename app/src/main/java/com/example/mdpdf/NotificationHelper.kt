@@ -40,7 +40,7 @@ object NotificationHelper {
 
     fun showExportProgress(context: Context, notificationId: Int, current: Int, total: Int) {
         val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_save)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Exporting PDF")
             .setContentText("Page $current of $total")
             .setProgress(total, current, false)
@@ -63,7 +63,7 @@ object NotificationHelper {
         )
 
         val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_save)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("PDF Exported")
             .setContentText("Tap to view")
             .setAutoCancel(true)
@@ -76,7 +76,7 @@ object NotificationHelper {
 
     fun showExportError(context: Context, notificationId: Int) {
         val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_save)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Export Failed")
             .setContentText("An error occurred while exporting the PDF")
             .setAutoCancel(true)

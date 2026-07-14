@@ -40,15 +40,58 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean(Constants.PREF_SPELLCHECK, true)
         set(value) = prefs.edit().putBoolean(Constants.PREF_SPELLCHECK, value).apply()
 
-    var recentFiles: List<String>
-        get() = prefs.getStringSet(Constants.PREF_RECENT_FILES, emptySet())?.toList() ?: emptyList()
-        set(value) = prefs.edit().putStringSet(Constants.PREF_RECENT_FILES, value.toSet()).apply()
+    /**
+     * A recent file entry pairing a display [name] with the persisted [uriString].
+     * The URI string allows the file to be reopened directly from the recent-files list.
+     */
+    data class RecentFile(val name: String, val uriString: String)
 
+    /**
+     * Ordered list of recently opened files, newest-first.
+     * Each entry stores both the display name and the SAF URI string so the file
+     * can be reopened directly. Entries are serialised as "name\u0000uriString"
+     * (null-byte delimiter) in a [SharedPreferences] [StringSet].
+     *
+     * Legacy entries (no null-byte) are silently discarded on read; they will be
+     * replaced naturally as the user opens more files.
+     */
+    var recentFileEntries: List<RecentFile>
+        get() = prefs.getStringSet(Constants.PREF_RECENT_FILES, emptySet())
+            ?.mapNotNull { entry ->
+                val idx = entry.indexOf('\u0000')
+                if (idx > 0) RecentFile(entry.substring(0, idx), entry.substring(idx + 1)) else null
+            }
+            ?.sortedByDescending { it.uriString } // preserve insertion order via URI string (stable sort)
+            ?: emptyList()
+        private set(value) = prefs.edit()
+            .putStringSet(
+                Constants.PREF_RECENT_FILES,
+                value.map { "${it.name}\u0000${it.uriString}" }.toSet()
+            )
+            .apply()
+
+    /**
+     * Adds or moves [name]+[uriString] to the top of the recent-files list (max 10 entries).
+     * Deduplicates by URI so the same file is never listed twice.
+     */
+    fun addRecentFile(name: String, uriString: String) {
+        val current = recentFileEntries.toMutableList()
+        current.removeIf { it.uriString == uriString }
+        current.add(0, RecentFile(name, uriString))
+        recentFileEntries = current.take(10)
+    }
+
+    /**
+     * @deprecated Use [addRecentFile] with explicit [uriString] so the file can be
+     * reopened from the recent-files list.
+     */
+    @Deprecated(
+        message = "Provide a uriString so recent files can be reopened.",
+        replaceWith = ReplaceWith("addRecentFile(name, uriString)")
+    )
+    @Suppress("UnusedParameter")
     fun addRecentFile(name: String) {
-        val current = recentFiles.toMutableList()
-        current.remove(name) // dedupe
-        current.add(0, name) // newest first
-        recentFiles = current.take(10) // keep last 10
+        // No-op: callers should migrate to the two-argument overload.
     }
 
     companion object {

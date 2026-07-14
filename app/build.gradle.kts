@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.commonmark)
     implementation(libs.commonmark.ext.gfm.tables)
     implementation(libs.commonmark.ext.gfm.strikethrough)
+    implementation(libs.commonmark.ext.task.list.items)
 
     // DocumentFile for SAF tree access
     implementation(libs.documentfile)

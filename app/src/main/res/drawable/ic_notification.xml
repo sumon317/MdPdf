@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!--
+        Monochrome notification icon: a document page outline with "PDF" implied
+        by a folded corner. The system tints this with the notification accent
+        color — do NOT add color fills here.
+    -->
+    <!-- Document body outline -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6,2 C4.9,2 4,2.9 4,4 L4,20 C4,21.1 4.9,22 6,22 L18,22 C19.1,22 20,21.1 20,20 L20,8 L14,2 Z
+                          M6,4 L13,4 L13,9 L18,9 L18,20 L6,20 Z" />
+    <!-- Folded corner triangle -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M14,2 L14,8 L20,8 Z" />
+    <!-- Horizontal content lines to suggest text -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M8,12 L16,12 L16,13.5 L8,13.5 Z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M8,15 L16,15 L16,16.5 L8,16.5 Z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M8,18 L13,18 L13,19 L8,19 Z" />
+</vector>

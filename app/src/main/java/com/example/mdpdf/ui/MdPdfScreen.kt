@@ -7,8 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,7 +35,10 @@ import com.example.mdpdf.NotificationHelper
 import com.example.mdpdf.PdfExporter
 import com.example.mdpdf.SettingsRepository
 import com.example.mdpdf.Strings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Suppress("FunctionName")
@@ -66,13 +67,13 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
         val printHtml = parser.toPrintHtml(markdownText, selectedTheme)
 
         scope.launch {
-            snackbarHostState.showSnackbar(
-                message = Strings.exportProgress(0, 1),
-                duration = SnackbarDuration.Short
-            )
-        }
-
-        scope.launch(Dispatchers.IO) {
+            // Show a persistent progress snackbar without blocking the export coroutine.
+            val snackbarJob = launch {
+                snackbarHostState.showSnackbar(
+                    message = Strings.exportProgress(0, 1),
+                    duration = SnackbarDuration.Indefinite
+                )
+            }
             try {
                 val error = PdfExporter(context).export(
                     htmlContent = printHtml,
@@ -81,52 +82,46 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                         if (settings.notificationsEnabled) {
                             NotificationHelper.showExportProgress(context, nid, current, total)
                         }
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                message = Strings.exportProgress(current, total),
-                                duration = SnackbarDuration.Short
-                            )
-                        }
                     }
                 )
-                scope.launch {
-                    snackbarHostState.dismissSnackbar()
-                    if (error == null) {
-                        if (settings.notificationsEnabled) {
-                            NotificationHelper.showExportComplete(context, nid, uri)
-                        }
-                        snackbarHostState.showSnackbar(
-                            message = Strings.exportSuccess,
-                            duration = SnackbarDuration.Short
-                        )
-                    } else {
-                        if (settings.notificationsEnabled) {
-                            NotificationHelper.showExportError(context, nid)
-                        }
-                        val result = snackbarHostState.showSnackbar(
-                            message = Strings.exportFailed(error.message ?: ""),
-                            actionLabel = Strings.btnRetry,
-                            duration = SnackbarDuration.Long
-                        )
-                        if (result == SnackbarResult.ActionPerformed) {
-                            executeExport(uri)
-                        }
+                // Dismiss the progress snackbar before showing the result.
+                snackbarJob.cancel()
+                snackbarHostState.currentSnackbarData?.dismiss()
+
+                if (error == null) {
+                    if (settings.notificationsEnabled) {
+                        NotificationHelper.showExportComplete(context, nid, uri)
                     }
-                }
-            } catch (e: Throwable) {
-                scope.launch {
-                    snackbarHostState.dismissSnackbar()
+                    snackbarHostState.showSnackbar(
+                        message = Strings.exportSuccess,
+                        duration = SnackbarDuration.Short
+                    )
+                } else {
                     if (settings.notificationsEnabled) {
                         NotificationHelper.showExportError(context, nid)
                     }
                     val result = snackbarHostState.showSnackbar(
-                        message = Strings.exportFailed(e.message ?: ""),
+                        message = Strings.exportFailed(error.message ?: ""),
                         actionLabel = Strings.btnRetry,
                         duration = SnackbarDuration.Long
                     )
                     if (result == SnackbarResult.ActionPerformed) {
                         executeExport(uri)
                     }
+                }
+            } catch (e: Throwable) {
+                snackbarJob.cancel()
+                snackbarHostState.currentSnackbarData?.dismiss()
+                if (settings.notificationsEnabled) {
+                    NotificationHelper.showExportError(context, nid)
+                }
+                val result = snackbarHostState.showSnackbar(
+                    message = Strings.exportFailed(e.message ?: ""),
+                    actionLabel = Strings.btnRetry,
+                    duration = SnackbarDuration.Long
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    executeExport(uri)
                 }
             }
         }
@@ -209,33 +204,39 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                 confirmButton = {
                     TextButton(onClick = {
                         dialogState = DialogState.None
-                        try {
-                            val imagesDir = File(context.filesDir, "images")
-                            imagesDir.mkdirs()
-                            val mimeType = context.contentResolver.getType(state.imageUri)
-                            val ext = when {
-                                mimeType?.contains("png") == true -> "png"
-                                mimeType?.contains("gif") == true -> "gif"
-                                mimeType?.contains("webp") == true -> "webp"
-                                else -> "jpg"
-                            }
-                            val fileName = "img_${System.currentTimeMillis()}.$ext"
-                            val destFile = File(imagesDir, fileName)
-                            context.contentResolver.openInputStream(state.imageUri)?.use { input ->
-                                destFile.outputStream().use { output ->
-                                    input.copyTo(output)
+                        val imageUri = state.imageUri
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val imagesDir = File(context.filesDir, "images")
+                                imagesDir.mkdirs()
+                                val mimeType = context.contentResolver.getType(imageUri)
+                                val ext = when {
+                                    mimeType?.contains("png") == true -> "png"
+                                    mimeType?.contains("gif") == true -> "gif"
+                                    mimeType?.contains("webp") == true -> "webp"
+                                    else -> "jpg"
+                                }
+                                val fileName = "img_${System.currentTimeMillis()}.$ext"
+                                val destFile = File(imagesDir, fileName)
+                                context.contentResolver.openInputStream(imageUri)?.use { input ->
+                                    destFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                val alt = altText.ifEmpty { "Image" }
+                                withContext(Dispatchers.Main.immediate) {
+                                    viewModel.updateMarkdownText("$markdownText\n![$alt](images/$fileName)\n")
+                                    Toast.makeText(context, Strings.imageAdded, Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main.immediate) {
+                                    Toast.makeText(
+                                        context,
+                                        Strings.imageFailed(e.message ?: ""),
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                 }
                             }
-                            val alt = altText.ifEmpty { "Image" }
-                            viewModel.updateMarkdownText("$markdownText\n![$alt](images/$fileName)\n")
-                            Toast.makeText(context, Strings.imageAdded, Toast.LENGTH_SHORT)
-                                .show()
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                Strings.imageFailed(e.message ?: ""),
-                                Toast.LENGTH_LONG
-                            ).show()
                         }
                     }) {
                         Text(Strings.btnInsert)
@@ -288,7 +289,7 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
         }
 
         is DialogState.RecentFiles -> {
-            val recent = settings.recentFiles
+            val recent = settings.recentFileEntries
             AlertDialog(
                 onDismissRequest = { dialogState = DialogState.None },
                 title = { Text(Strings.recentFilesTitle) },
@@ -297,16 +298,27 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                         Text(Strings.recentFilesEmpty)
                     } else {
                         Column {
-                            recent.forEach { name ->
+                            recent.forEach { recentFile ->
                                 TextButton(
                                     onClick = {
                                         dialogState = DialogState.None
-                                        // Re-open requires URI — names alone are insufficient
-                                        // TODO: store full URI in recentFiles for re-opening
+                                        val uri = Uri.parse(recentFile.uriString)
+                                        viewModel.loadMarkdownFromUri(uri) { success, _ ->
+                                            if (!success) {
+                                                Toast.makeText(
+                                                    context,
+                                                    Strings.openFailed,
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(name, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        recentFile.name,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
                             }
                         }
@@ -353,38 +365,6 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                             }
                         }
                     }
-                    TextButton(onClick = { openDocumentLauncher.launch(arrayOf("text/*", "text/markdown")) }) {
-                        Text(Strings.btnOpen)
-                    }
-                    TextButton(onClick = {
-                        val pdfName = currentFileName.ifEmpty { "MdPdf" } + ".pdf"
-                        val defaultFolderStr = settings.defaultFolder
-                        if (defaultFolderStr.isNotEmpty()) {
-                            try {
-                                val treeUri = Uri.parse(defaultFolderStr)
-                                val documentFile = DocumentFile.fromTreeUri(context, treeUri)
-                                val pdfFile = documentFile?.createFile("application/pdf", pdfName.removeSuffix(".pdf"))
-                                if (pdfFile != null) {
-                                    startExport(pdfFile.uri)
-                                } else {
-                                    saveDocumentLauncher.launch(pdfName)
-                                }
-                            } catch (_: Exception) {
-                                saveDocumentLauncher.launch(pdfName)
-                            }
-                        } else {
-                            // Try app-specific documents folder first, fall back to SAF picker
-                            val appDocsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
-                            if (appDocsDir != null && appDocsDir.exists().also { if (!it) appDocsDir.mkdirs() }) {
-                                val file = File(appDocsDir, pdfName)
-                                startExport(Uri.fromFile(file))
-                            } else {
-                                saveDocumentLauncher.launch(pdfName)
-                            }
-                        }
-                    }) {
-                        Text(Strings.btnExportPdf)
-                    }
                     Box {
                         IconButton(
                             onClick = { dialogState = DialogState.OverflowMenu },
@@ -396,6 +376,43 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                             expanded = dialogState == DialogState.OverflowMenu,
                             onDismissRequest = { dialogState = DialogState.None }
                         ) {
+                            // Open file
+                            DropdownMenuItem(
+                                text = { Text(Strings.btnOpen) },
+                                onClick = {
+                                    dialogState = DialogState.None
+                                    openDocumentLauncher.launch(arrayOf("text/*", "text/markdown"))
+                                }
+                            )
+                            // Export PDF (respects default folder setting)
+                            DropdownMenuItem(
+                                text = { Text(Strings.btnExportPdf) },
+                                onClick = {
+                                    dialogState = DialogState.None
+                                    val pdfName = currentFileName.ifEmpty { "MdPdf" } + ".pdf"
+                                    val defaultFolderStr = settings.defaultFolder
+                                    if (defaultFolderStr.isNotEmpty()) {
+                                        try {
+                                            val treeUri = Uri.parse(defaultFolderStr)
+                                            val documentFile = DocumentFile.fromTreeUri(context, treeUri)
+                                            val pdfFile = documentFile?.createFile(
+                                                "application/pdf",
+                                                pdfName.removeSuffix(".pdf")
+                                            )
+                                            if (pdfFile != null) {
+                                                startExport(pdfFile.uri)
+                                            } else {
+                                                saveDocumentLauncher.launch(pdfName)
+                                            }
+                                        } catch (_: Exception) {
+                                            saveDocumentLauncher.launch(pdfName)
+                                        }
+                                    } else {
+                                        saveDocumentLauncher.launch(pdfName)
+                                    }
+                                }
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = {
                                     Text(
@@ -424,7 +441,7 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                                 text = { Text(Strings.menuSharePdf) },
                                 onClick = {
                                     dialogState = DialogState.None
-                                    sharePdf(context, markdownText, selectedTheme, parser)
+                                    sharePdf(context, scope, markdownText, selectedTheme, parser)
                                 }
                             )
                             DropdownMenuItem(
@@ -546,7 +563,13 @@ private fun shareMarkdown(context: android.content.Context, text: String, fileNa
     context.startActivity(Intent.createChooser(intent, Strings.shareMarkdownTitle))
 }
 
-private fun sharePdf(context: android.content.Context, markdownText: String, theme: MdTheme, parser: MarkdownParser) {
+private fun sharePdf(
+    context: android.content.Context,
+    scope: CoroutineScope,
+    markdownText: String,
+    theme: MdTheme,
+    parser: MarkdownParser
+) {
     val printHtml = parser.toPrintHtml(markdownText, theme)
     val name = "MdPdf_shared.pdf"
     val tempFile = File(context.cacheDir, name)
@@ -559,25 +582,25 @@ private fun sharePdf(context: android.content.Context, markdownText: String, the
     )
     val toast = Toast.makeText(context, Strings.generatingPdf, Toast.LENGTH_SHORT)
     toast.show()
-    PdfExporter(context).export(
-        htmlContent = printHtml,
-        uri = uri,
-        onResult = { error ->
-            toast.cancel()
-            if (error == null) {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(intent, Strings.sharePdfTitle))
-            } else {
-                Toast.makeText(
-                    context,
-                    Strings.exportFailed(error.message ?: ""),
-                    Toast.LENGTH_LONG
-                ).show()
+    scope.launch {
+        val error = PdfExporter(context).export(
+            htmlContent = printHtml,
+            uri = uri
+        )
+        toast.cancel()
+        if (error == null) {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+            context.startActivity(Intent.createChooser(intent, Strings.sharePdfTitle))
+        } else {
+            Toast.makeText(
+                context,
+                Strings.exportFailed(error.message ?: ""),
+                Toast.LENGTH_LONG
+            ).show()
         }
-    )
+    }
 }

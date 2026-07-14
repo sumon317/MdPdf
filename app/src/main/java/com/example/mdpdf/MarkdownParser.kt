@@ -2,8 +2,7 @@ package com.example.mdpdf
 
 import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
-import org.commonmark.ext.gfm.tasklist.TaskListItemsExtension
-import org.commonmark.ext.gfm.tasklist.TaskListExtension
+import org.commonmark.ext.task.list.items.TaskListItemsExtension
 import org.commonmark.renderer.html.HtmlRenderer
 import org.commonmark.parser.Parser
 

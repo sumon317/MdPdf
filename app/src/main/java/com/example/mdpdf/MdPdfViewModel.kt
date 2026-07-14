@@ -9,11 +9,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.mdpdf.ui.ViewMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * ViewModel for the main Markdown-to-PDF screen.
@@ -188,18 +192,25 @@ class MdPdfViewModel(
     }
 
     fun loadMarkdownFromUri(uri: Uri, onResult: (Boolean, String) -> Unit) {
-        try {
-            getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                val text = input.bufferedReader().readText()
-                updateMarkdownText(text)
-                updateCurrentFileUri(uri)
-                val fileName = extractFileName(uri)
-                updateCurrentFileName(fileName)
-                settings.addRecentFile(fileName)
-                onResult(true, fileName)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val text = getApplication<Application>()
+                    .contentResolver.openInputStream(uri)
+                    ?.use { it.bufferedReader().readText() }
+                    ?: throw IOException("Stream was null for URI: $uri")
+                withContext(Dispatchers.Main.immediate) {
+                    updateMarkdownText(text)
+                    updateCurrentFileUri(uri)
+                    val fileName = extractFileName(uri)
+                    updateCurrentFileName(fileName)
+                    settings.addRecentFile(fileName, uri.toString())
+                    onResult(true, fileName)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main.immediate) {
+                    onResult(false, e.message ?: "Unknown error")
+                }
             }
-        } catch (e: Exception) {
-            onResult(false, e.message ?: "Unknown error")
         }
     }
 
