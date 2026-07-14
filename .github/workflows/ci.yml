@@ -48,22 +48,16 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --no-daemon --stacktrace
 
-      - name: Start emulator
-        uses: android-actions/start-emulator@v3
-        with:
-          api-level: 36
-          arch: x86_64
-          force-avd-creation: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
-          disable-animations: true
-
-      - name: Wait for emulator
-        run: |
-          adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-          adb shell input keyevent 82
-
       - name: Run instrumented tests
-        run: ./gradlew connectedAndroidTest --no-daemon --stacktrace
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: ./gradlew connectedAndroidTest --no-daemon --stacktrace
 
       - name: Upload test reports
         if: always()
