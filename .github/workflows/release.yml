@@ -1,0 +1,58 @@
+name: Build and Release APK
+
+on:
+  push:
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+permissions:
+  contents: write # Required for creating releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Extract Tag Name
+        id: extract_tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_NAME=manual-build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rename APK for Release
+        run: mv app/build/outputs/apk/release/app-release.apk MdPdf-${{ steps.extract_tag.outputs.TAG_NAME }}.apk
+
+      - name: Upload APK as Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MdPdf-APK
+          path: MdPdf-${{ steps.extract_tag.outputs.TAG_NAME }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ steps.extract_tag.outputs.TAG_NAME }}
+          name: Release ${{ steps.extract_tag.outputs.TAG_NAME }}
+          files: MdPdf-${{ steps.extract_tag.outputs.TAG_NAME }}.apk
+          generate_release_notes: true
