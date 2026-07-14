@@ -9,3 +9,8 @@
 .cxx
 local.properties
 **/gradle-daemon-jvm.properties
+
+# Release signing — never commit these
+keystore.properties
+*.keystore
+*.jks

@@ -1,8 +1,32 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.detekt)
 }
+
+// Release signing credentials.
+// Local dev: read from keystore.properties (gitignored, never committed).
+// CI: read from environment variables (populated from GitHub Secrets).
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingProp(propKey: String, envKey: String): String =
+    keystoreProperties.getProperty(propKey) ?: System.getenv(envKey) ?: ""
+
+val releaseStoreFilePath = signingProp("storeFile", "RELEASE_STORE_FILE")
+val releaseStorePassword = signingProp("storePassword", "RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = signingProp("keyAlias", "RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingProp("keyPassword", "RELEASE_KEY_PASSWORD")
+val hasReleaseSigningConfig = releaseStoreFilePath.isNotBlank() &&
+    releaseStorePassword.isNotBlank() &&
+    releaseKeyAlias.isNotBlank() &&
+    releaseKeyPassword.isNotBlank()
 
 detekt {
     config.setFrom(rootDir.resolve("config/detekt/detekt.yml"))
@@ -22,8 +46,19 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -42,7 +77,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigningConfig) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "No release signing credentials found (keystore.properties or " +
+                        "RELEASE_STORE_FILE/RELEASE_STORE_PASSWORD/RELEASE_KEY_ALIAS/" +
+                        "RELEASE_KEY_PASSWORD env vars). Falling back to debug signing " +
+                        "— this APK is NOT suitable for distribution."
+                )
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
