@@ -96,6 +96,7 @@ private val MatchaBlackColorScheme = darkColorScheme(
     surfaceTint = DarkSurfaceTint,
 )
 
+@Suppress("FunctionName")
 @Composable
 fun MdPdfTheme(
     appTheme: String = "light",

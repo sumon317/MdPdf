@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">MdPdf</string>
+
+    <!-- Accessibility -->
+    <string name="content_description_overflow_menu">Open options menu</string>
+    <string name="content_description_view_mode_editor">Edit mode selected</string>
+    <string name="content_description_view_mode_preview">Preview mode selected</string>
+    <string name="content_description_view_mode_split">Split mode selected</string>
+
+    <!-- Theme descriptions -->
+    <string name="content_description_theme_default">Default theme selected</string>
+    <string name="content_description_theme_academic">Academic theme selected</string>
+    <string name="content_description_theme_dark">Dark mode selected</string>
+    <string name="content_description_theme_minimal">Minimal theme selected</string>
 </resources>

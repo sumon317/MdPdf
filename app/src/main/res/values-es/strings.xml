@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MdPdf</string>
+
+    <!-- Accesibilidad -->
+    <string name="content_description_overflow_menu">Abrir menú de opciones</string>
+    <string name="content_description_view_mode_editor">Modo de edición seleccionado</string>
+    <string name="content_description_view_mode_preview">Modo de vista previa seleccionado</string>
+    <string name="content_description_view_mode_split">Modo dividido seleccionado</string>
+
+    <!-- Descripciones de temas para accesibilidad -->
+    <string name="content_description_theme_default">Tema predeterminado seleccionado</string>
+    <string name="content_description_theme_academic">Tema académico seleccionado</string>
+    <string name="content_description_theme_dark">Modo oscuro seleccionado</string>
+    <string name="content_description_theme_minimal">Tema minimalista seleccionado</string>
+</resources>

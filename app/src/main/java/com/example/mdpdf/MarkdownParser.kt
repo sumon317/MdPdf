@@ -2,9 +2,12 @@ package com.example.mdpdf
 
 import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
+import org.commonmark.ext.gfm.tasklist.TaskListItemsExtension
+import org.commonmark.ext.gfm.tasklist.TaskListExtension
 import org.commonmark.renderer.html.HtmlRenderer
 import org.commonmark.parser.Parser
 
+/** Theme presets for the PDF output styling. */
 enum class MdTheme(val label: String) {
     DEFAULT("Default"),
     ACADEMIC("Academic"),
@@ -13,6 +16,17 @@ enum class MdTheme(val label: String) {
     PURE_BLACK("Pure Black")
 }
 
+/**
+ * Parses markdown text into HTML for preview and print/PDF export.
+ *
+ * Uses [org.commonmark] for standard markdown parsing with GFM table
+ * and strikethrough extensions. Math expressions (KaTeX-compatible)
+ * are extracted via regex and wrapped in KaTeX render hooks.
+ *
+ * Two HTML outputs are generated:
+ * - [toHtml] produces a scrollable preview with Prism syntax highlighting.
+ * - [toPrintHtml] produces a paginated PDF-ready document with page breaks.
+ */
 class MarkdownParser {
 
     private val mathRegex = Regex(
@@ -22,6 +36,7 @@ class MarkdownParser {
     private val extensions = listOf(
         TablesExtension.create(),
         StrikethroughExtension.create(),
+        TaskListItemsExtension.create(),
     )
 
     private val parser = Parser.builder()
@@ -105,8 +120,8 @@ $bodyHtml
 <script>
 if(typeof Prism!=='undefined'&&Prism.plugins&&Prism.plugins.autoloader){
   Prism.plugins.autoloader.languages_path = 'file:///android_asset/prism/components/';
-}
-function tryRender(attempt){
+    }
+    function tryRender(attempt){
 if(typeof renderMathInElement!=='undefined'&&typeof katex!=='undefined'){
 try{
 renderMathInElement(document.body,{delimiters:[
@@ -183,8 +198,39 @@ $bodyHtml
 <script>
 if(typeof Prism!=='undefined'&&Prism.plugins&&Prism.plugins.autoloader){
   Prism.plugins.autoloader.languages_path = 'file:///android_asset/prism/components/';
+  }
+  console.log('MdPdf: scripts starting, katex='+typeof katex+', renderMathInElement='+typeof renderMathInElement)
+function addCodeHeaders(){
+var pres=document.querySelectorAll('pre[class*="language-"]');
+if(pres.length===0) pres=document.querySelectorAll('pre code[class*="language-"]');
+if(pres.length===0) pres=document.querySelectorAll('pre');
+pres.forEach(function(pre){
+if(pre.querySelector('.code-header'))return;
+var header=document.createElement('div');header.className='code-header';
+var label=document.createElement('span');label.className='lang-label';
+var code=pre.querySelector('code');
+var lang='';
+if(code&&code.className){
+var m=code.className.match(/language-(\w+)/);
+if(m) lang=m[1];
 }
-console.log('MdPdf: scripts starting, katex='+typeof katex+', renderMathInElement='+typeof renderMathInElement)
+label.textContent=lang||'CODE';
+header.appendChild(label);
+var btn=document.createElement('button');btn.className='copy-btn';
+btn.textContent='Copy';
+btn.onclick=function(){
+var txt=code?code.textContent:pre.textContent;
+if(navigator.clipboard&&navigator.clipboard.writeText){
+navigator.clipboard.writeText(txt).then(function(){
+btn.textContent='Copied!';
+setTimeout(function(){btn.textContent='Copy';},2000);
+});
+}
+};
+header.appendChild(btn);
+pre.parentNode.insertBefore(header,pre);
+});
+}
 function tryRender(attempt){
 if(typeof renderMathInElement!=='undefined'&&typeof katex!=='undefined'){
 console.log('MdPdf: rendering math (attempt '+attempt+')')
@@ -206,6 +252,7 @@ console.error('MdPdf: KaTeX failed to load after 10 attempts')
 }
 document.addEventListener('DOMContentLoaded',function(){
 if(typeof Prism!=='undefined'){Prism.highlightAll()}
+addCodeHeaders()
 window.setTimeout(function(){tryRender(1)},500)
 })
 </script>
@@ -213,11 +260,11 @@ window.setTimeout(function(){tryRender(1)},500)
     }
 }
 
-private val PRISM_JS = "file:///android_asset/prism/prism.min.js"
-private val PRISM_AUTOLOADER = "file:///android_asset/prism/prism-autoloader.min.js"
-private val KATEX_JS = "file:///android_asset/katex/katex.min.js"
-private val KATEX_CSS = "file:///android_asset/katex/katex.min.css"
-private val KATEX_AUTO_RENDER = "file:///android_asset/katex/contrib/auto-render.min.js"
+private const val PRISM_JS = "file:///android_asset/prism/prism.min.js"
+private const val PRISM_AUTOLOADER = "file:///android_asset/prism/prism-autoloader.min.js"
+private const val KATEX_JS = "file:///android_asset/katex/katex.min.js"
+private const val KATEX_CSS = "file:///android_asset/katex/katex.min.css"
+private const val KATEX_AUTO_RENDER = "file:///android_asset/katex/contrib/auto-render.min.js"
 
 private val COMMON_CSS = """
 body {
@@ -250,11 +297,17 @@ img { max-width: 100%; height: auto; border-radius: 4px; }
 a { color: #0969da; text-decoration: none; }
 ul, ol { padding-left: 24px; margin: 0 0 16px; }
 li { margin: 4px 0; }
+
+/* Task list (GFM) */
+.task-list-item { list-style: none; margin-left: -24px; padding-left: 24px; position: relative; }
+.task-list-item input[type=checkbox] { position: absolute; left: 0; top: 4px; width: 16px; height: 16px; cursor: default; accent-color: #0969da; }
+.task-list-item::before { display: none; }
+
 hr { border: none; border-top: 1px solid #eaecef; margin: 24px 0; }
 .katex { font-size: 1.1em; }
 """.trimIndent()
 
-private val DEFAULT_CSS = ""
+private const val DEFAULT_CSS = ""
 private val ACADEMIC_CSS = """
 body { font-family: 'Georgia', 'Times New Roman', serif; font-size: 16px; line-height: 1.8; }
 h1, h2 { font-family: 'Georgia', serif; font-weight: 700; }

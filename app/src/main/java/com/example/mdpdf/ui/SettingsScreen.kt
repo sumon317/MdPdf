@@ -13,8 +13,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.mdpdf.NotificationHelper
 import com.example.mdpdf.SettingsRepository
+import com.example.mdpdf.Strings
 
+@Suppress("FunctionName")
 @Composable
 fun SettingsDialog(
     onDismiss: () -> Unit
@@ -42,20 +45,20 @@ fun SettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings") },
+        title = { Text(Strings.settingsTitle) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text("App Theme", style = MaterialTheme.typography.titleSmall)
+                Text(Strings.settingsAppTheme, style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(8.dp))
-                ThemeOption("Light", "light", appTheme) {
+                ThemeOption(Strings.settingsLight, "light", appTheme) {
                     appTheme = it; settings.appTheme = it
                     (context as? Activity)?.recreate()
                 }
-                ThemeOption("Dark", "dark", appTheme) {
+                ThemeOption(Strings.settingsDark, "dark", appTheme) {
                     appTheme = it; settings.appTheme = it
                     (context as? Activity)?.recreate()
                 }
-                ThemeOption("Pure Black (AMOLED)", "pure_black", appTheme) {
+                ThemeOption(Strings.settingsPureBlack, "pure_black", appTheme) {
                     appTheme = it; settings.appTheme = it
                     (context as? Activity)?.recreate()
                 }
@@ -67,7 +70,10 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Show errors in PDF", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        Strings.settingsShowErrors,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     Switch(
                         checked = showErrors,
                         onCheckedChange = {
@@ -84,7 +90,7 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Spellcheck", style = MaterialTheme.typography.bodyMedium)
+                    Text(Strings.settingsSpellcheck, style = MaterialTheme.typography.bodyMedium)
                     Switch(
                         checked = spellCheck,
                         onCheckedChange = {
@@ -101,19 +107,27 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Export notifications", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        Strings.settingsNotifications,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     Switch(
                         checked = notifications,
                         onCheckedChange = {
                             notifications = it
                             settings.notificationsEnabled = it
+                            if (it) {
+                                NotificationHelper.createChannel(context)
+                            } else {
+                                NotificationHelper.deleteChannel(context)
+                            }
                         }
                     )
                 }
 
                 Spacer(Modifier.height(12.dp))
 
-                Text("Default Save Folder", style = MaterialTheme.typography.titleSmall)
+                Text(Strings.settingsDefaultFolder, style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(8.dp))
                 if (defaultFolder.isNotEmpty()) {
                     Row(
@@ -121,26 +135,31 @@ fun SettingsDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Folder set", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            Strings.settingsFolderSet,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         TextButton(onClick = {
                             settings.defaultFolder = ""
                             defaultFolder = ""
-                        }) { Text("Clear") }
+                        }) { Text(Strings.settingsClear) }
                     }
                 } else {
                     OutlinedButton(
                         onClick = { folderPickerLauncher.launch(null) },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Select Folder") }
+                    ) { Text(Strings.settingsSelectFolder) }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(Strings.btnDone) }
         }
     )
 }
 
+@Suppress("FunctionName")
 @Composable
 private fun ThemeOption(
     label: String,

@@ -9,27 +9,37 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
+/**
+ * Manages the export-progress notification channel and posts
+ * progress, completion, and error notifications using
+ * [NotificationCompat.Builder].
+ */
 object NotificationHelper {
-
-    private const val CHANNEL_ID = "mdpdf_export"
-    private const val CHANNEL_NAME = "Export Progress"
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
+                Constants.NOTIFICATION_CHANNEL_ID,
+                Constants.NOTIFICATION_CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "PDF export notifications"
+                description = Constants.NOTIFICATION_CHANNEL_DESC
             }
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
     }
 
+    /** Deletes the export-progress notification channel, silencing all future export notifications. */
+    fun deleteChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.deleteNotificationChannel(Constants.NOTIFICATION_CHANNEL_ID)
+        }
+    }
+
     fun showExportProgress(context: Context, notificationId: Int, current: Int, total: Int) {
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_save)
             .setContentTitle("Exporting PDF")
             .setContentText("Page $current of $total")
@@ -52,7 +62,7 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_save)
             .setContentTitle("PDF Exported")
             .setContentText("Tap to view")
@@ -65,7 +75,7 @@ object NotificationHelper {
     }
 
     fun showExportError(context: Context, notificationId: Int) {
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_save)
             .setContentTitle("Export Failed")
             .setContentText("An error occurred while exporting the PDF")

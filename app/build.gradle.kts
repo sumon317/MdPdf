@@ -1,6 +1,12 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.detekt)
+}
+
+detekt {
+    config.setFrom(rootDir.resolve("config/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
 }
 
 android {
@@ -23,6 +29,11 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
         release {
             isMinifyEnabled = true
@@ -73,7 +84,18 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 
     // Test
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
+        testImplementation(libs.junit)
+        testImplementation(libs.robolectric)
+        testImplementation(libs.truth)
+        testImplementation(libs.compose.ui.test.junit4)
+        testImplementation(libs.compose.ui.test)
+        testImplementation(libs.coroutines.test)
+        testImplementation("androidx.arch.core:core-testing:2.2.0")
+
+        androidTestImplementation(libs.androidx.espresso.core)
+            androidTestImplementation(libs.androidx.junit)
+            androidTestImplementation(libs.compose.ui.test.junit4)
+            androidTestImplementation(libs.compose.ui.test)
+            androidTestImplementation("androidx.test:rules:1.5.0")
+            androidTestImplementation("androidx.test:core:1.5.0")
 }

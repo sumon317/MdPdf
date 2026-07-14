@@ -2,6 +2,8 @@ package com.example.mdpdf.ui
 
 import android.annotation.SuppressLint
 import android.util.Log
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
@@ -9,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
+@Suppress("FunctionName")
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun MarkdownWebView(
@@ -28,15 +31,16 @@ fun MarkdownWebView(
                 settings.builtInZoomControls = true
                 settings.displayZoomControls = false
                 settings.domStorageEnabled = true
-                settings.allowFileAccess = true
-                settings.allowContentAccess = false
-                @Suppress("DEPRECATION")
-                settings.allowFileAccessFromFileURLs = false
-                @Suppress("DEPRECATION")
-                settings.allowUniversalAccessFromFileURLs = false
                 webViewClient = object : WebViewClient() {
-                    override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
-                        Log.e("MdPdfWebView", "Error($errorCode): $description url=$failingUrl")
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: WebResourceError?
+                    ) {
+                        Log.e(
+                            "MdPdfWebView",
+                            "Error(${error?.errorCode}): ${error?.description} url=${request?.url}"
+                        )
                     }
                 }
             }

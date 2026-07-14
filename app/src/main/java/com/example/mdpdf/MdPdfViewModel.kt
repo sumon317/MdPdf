@@ -4,16 +4,25 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.mdpdf.ui.ViewMode
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
+/**
+ * ViewModel for the main Markdown-to-PDF screen.
+ *
+ * Holds markdown text, file metadata, view mode, and PDF theme
+ * as observable [StateFlow] properties backed by [SavedStateHandle]
+ * for process-death survival. Provides mutation functions and
+ * a URI-loading helper with callback.
+ */
 class MdPdfViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle
@@ -23,14 +32,9 @@ class MdPdfViewModel(
     val parser = MarkdownParser()
 
     companion object {
-        private const val KEY_MARKDOWN_TEXT = "markdown_text"
-        private const val KEY_CURRENT_FILE_NAME = "current_file_name"
-        private const val KEY_CURRENT_FILE_URI = "current_file_uri"
-        private const val KEY_VIEW_MODE = "view_mode"
-        private const val KEY_SELECTED_THEME = "selected_theme"
 
         private val DEFAULT_MARKDOWN = """
-            # Welcome to MdPdf
+                # Welcome to MdPdf
 
             A complete **Markdown to PDF** converter for Android, inspired by Obsidian.
 
@@ -125,21 +129,34 @@ class MdPdfViewModel(
             \end{vmatrix}
             \]
         """.trimIndent()
+
+        @VisibleForTesting
+        fun getDefaultMarkdownForTesting() = DEFAULT_MARKDOWN
     }
 
-    val markdownText = savedStateHandle.getStateFlow(KEY_MARKDOWN_TEXT, DEFAULT_MARKDOWN)
-    val currentFileName = savedStateHandle.getStateFlow(KEY_CURRENT_FILE_NAME, "")
-    val currentFileUri = savedStateHandle.getStateFlow(KEY_CURRENT_FILE_URI, "")
+    val markdownText = savedStateHandle.getStateFlow(Constants.STATE_KEY_MARKDOWN_TEXT, DEFAULT_MARKDOWN)
+    val currentFileName = savedStateHandle.getStateFlow(Constants.STATE_KEY_CURRENT_FILE_NAME, "")
+    val currentFileUri = savedStateHandle.getStateFlow(Constants.STATE_KEY_CURRENT_FILE_URI, "")
 
-    val viewMode: StateFlow<ViewMode> = savedStateHandle.getStateFlow(KEY_VIEW_MODE, ViewMode.SPLIT.name)
-        .combine(MutableStateFlow(ViewMode.SPLIT)) { name, _ ->
-            try { ViewMode.valueOf(name) } catch (_: Exception) { ViewMode.SPLIT }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, ViewMode.SPLIT)
+    val viewMode: StateFlow<ViewMode> =
+        savedStateHandle.getStateFlow(Constants.STATE_KEY_VIEW_MODE, ViewMode.SPLIT.name)
+            .map { name ->
+                try {
+                    ViewMode.valueOf(name)
+                } catch (_: Exception) {
+                    ViewMode.SPLIT
+                }
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, ViewMode.SPLIT)
 
-    val selectedTheme: StateFlow<MdTheme> = savedStateHandle.getStateFlow(KEY_SELECTED_THEME, settings.markdownTheme)
-        .combine(MutableStateFlow(MdTheme.DEFAULT)) { name, _ ->
-            try { MdTheme.valueOf(name) } catch (_: Exception) { MdTheme.DEFAULT }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, MdTheme.DEFAULT)
+    val selectedTheme: StateFlow<MdTheme> =
+        savedStateHandle.getStateFlow(Constants.STATE_KEY_SELECTED_THEME, settings.markdownTheme)
+            .map { name ->
+                try {
+                    MdTheme.valueOf(name)
+                } catch (_: Exception) {
+                    MdTheme.DEFAULT
+                }
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, MdTheme.DEFAULT)
 
     val htmlContent: StateFlow<String> = combine(markdownText, selectedTheme) { text, theme ->
         parser.toHtml(text, theme, settings.showErrorsInPdf)
@@ -150,23 +167,23 @@ class MdPdfViewModel(
     )
 
     fun updateMarkdownText(text: String) {
-        savedStateHandle[KEY_MARKDOWN_TEXT] = text
+        savedStateHandle[Constants.STATE_KEY_MARKDOWN_TEXT] = text
     }
 
     fun updateCurrentFileName(name: String) {
-        savedStateHandle[KEY_CURRENT_FILE_NAME] = name
+        savedStateHandle[Constants.STATE_KEY_CURRENT_FILE_NAME] = name
     }
 
     fun updateCurrentFileUri(uri: Uri?) {
-        savedStateHandle[KEY_CURRENT_FILE_URI] = uri?.toString() ?: ""
+        savedStateHandle[Constants.STATE_KEY_CURRENT_FILE_URI] = uri?.toString() ?: ""
     }
 
     fun updateViewMode(mode: ViewMode) {
-        savedStateHandle[KEY_VIEW_MODE] = mode.name
+        savedStateHandle[Constants.STATE_KEY_VIEW_MODE] = mode.name
     }
 
     fun updateSelectedTheme(theme: MdTheme) {
-        savedStateHandle[KEY_SELECTED_THEME] = theme.name
+        savedStateHandle[Constants.STATE_KEY_SELECTED_THEME] = theme.name
         settings.markdownTheme = theme.name
     }
 
@@ -176,8 +193,9 @@ class MdPdfViewModel(
                 val text = input.bufferedReader().readText()
                 updateMarkdownText(text)
                 updateCurrentFileUri(uri)
-                val fileName = extractFileName(uri, getApplication())
+                val fileName = extractFileName(uri)
                 updateCurrentFileName(fileName)
+                settings.addRecentFile(fileName)
                 onResult(true, fileName)
             }
         } catch (e: Exception) {
@@ -185,7 +203,7 @@ class MdPdfViewModel(
         }
     }
 
-    private fun extractFileName(uri: Uri, context: Context): String {
+    private fun extractFileName(uri: Uri): String {
         try {
             val docId = DocumentsContract.getDocumentId(uri)
             val segments = docId.split(":")

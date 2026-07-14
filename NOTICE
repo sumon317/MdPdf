@@ -1,0 +1,25 @@
+# Third-Party Notices
+
+MdPdf includes the following open-source software:
+
+## commonmark-java
+https://github.com/commonmark/commonmark-java
+Copyright (c) 2015-2024, Atlassian Pty Ltd
+Licensed under BSD 2-Clause License
+
+## KaTeX
+https://github.com/KaTeX/KaTeX
+Copyright (c) 2013-2024, Khan Academy and contributors
+Licensed under MIT License
+
+## Prism.js
+https://github.com/PrismJS/prism
+Copyright (c) 2012-2024, Lea Verou and contributors
+Licensed under MIT License
+
+## AndroidX / Jetpack Compose
+https://developer.android.com/jetpack/compose
+Copyright (c) The Android Open Source Project
+Licensed under Apache License 2.0
+
+The full license texts for each component are available at their respective project pages.

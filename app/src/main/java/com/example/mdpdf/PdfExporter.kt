@@ -13,32 +13,41 @@ import android.webkit.WebViewClient
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Exports rendered HTML to a paginated PDF document via [WebView] capture.
+ *
+ * Uses an off-screen WebView to render the HTML, then captures each
+ * page as a bitmap and writes them into an Android [PdfDocument].
+ * Progress is reported per page, and cancellation is honoured on
+ * Activity destruction.
+ *
+ * @param context Must be an [Activity] context for WebView attachment.
+ */
 class PdfExporter(private val context: Context) {
 
-    fun export(
+    suspend fun export(
         htmlContent: String,
         uri: Uri,
         onProgress: ((Int, Int) -> Unit)? = null,
         onResult: ((Throwable?) -> Unit)? = null
-    ) {
+    ): Throwable? = withContext(Dispatchers.IO) {
         val activity = context as? Activity
         if (activity == null) {
-            onResult?.invoke(Exception("Export requires an Activity context"))
-            return
+            return@withContext Exception("Export requires an Activity context")
         }
 
         val env = ExportEnv(htmlContent, uri, activity, onProgress, onResult)
 
         val lifecycle = (activity as? LifecycleOwner)?.lifecycle
-        val observer = object : LifecycleEventObserver {
-            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
-                if (event == Lifecycle.Event.ON_DESTROY) {
-                    if (env.isCancelled.compareAndSet(false, true)) {
-                        cleanup(env, null)
-                        env.onResult?.invoke(Exception("Activity destroyed during export"))
-                    }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_DESTROY) {
+                if (env.isCancelled.compareAndSet(false, true)) {
+                    cleanup(env, null)
+                    env.onResult?.invoke(Exception("Activity destroyed during export"))
                 }
             }
         }
@@ -48,12 +57,14 @@ class PdfExporter(private val context: Context) {
 
         try {
             runExport(env)
+            null
         } catch (e: Throwable) {
             Log.e("PdfExporter", "Export failed", e)
             if (env.isCancelled.compareAndSet(false, true)) {
                 cleanup(env, null)
                 onResult?.invoke(e)
             }
+            e
         }
     }
 
@@ -81,16 +92,12 @@ class PdfExporter(private val context: Context) {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.useWideViewPort = true
-            settings.allowFileAccess = true
-            settings.allowContentAccess = false
-            @Suppress("DEPRECATION")
-            settings.allowFileAccessFromFileURLs = false
-            @Suppress("DEPRECATION")
-            settings.allowUniversalAccessFromFileURLs = false
+
             setBackgroundColor(0xFFFFFFFF.toInt())
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             alpha = 0f
+            clearCache(true)
         }
         env.webView = webView
 
@@ -207,7 +214,7 @@ class PdfExporter(private val context: Context) {
                 Log.w("PdfExporter", "postVisualStateCallback timeout, using fallback")
                 doCapture(env, webView, index, pageCount, pageWidthPx, pageHeightPx, document)
             }
-        }, 2000L)
+        }, 800L)
     }
 
     private fun doCapture(

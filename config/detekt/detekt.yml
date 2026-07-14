@@ -1,0 +1,42 @@
+style:
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: false
+  ForbiddenComment:
+    active: false
+  MaxLineLength:
+    active: false
+  ReturnCount:
+    active: false
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - 'Composable'
+
+complexity:
+  LongMethod:
+    active: false
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 10
+    ignoreDefaultParameters: true
+  TooManyFunctions:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  StringLiteralDuplication:
+    active: false
+
+comments:
+  AbsentOrWrongFileLicense:
+    active: false
+  CommentOverPrivateFunction:
+    active: false
+  CommentOverPrivateProperty:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false

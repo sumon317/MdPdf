@@ -1,3 +1,4 @@
+/* eslint-disable */
 import katex from '../katex.mjs';
 
 /* eslint no-constant-condition:0 */
