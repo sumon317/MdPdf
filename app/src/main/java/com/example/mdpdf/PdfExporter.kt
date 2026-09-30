@@ -9,6 +9,7 @@ import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.WebView
+import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -142,7 +143,10 @@ class PdfExporter(private val context: Context) {
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             alpha = 0f
-            clearCache(true)
+            // NOTE: deliberately not calling clearCache() here — wiping the
+            // whole WebView disk cache on every export forced KaTeX/Prism
+            // assets to reload from scratch each time.
+            cacheMode = WebSettings.LOAD_DEFAULT
         }
         env.webView = webView
 

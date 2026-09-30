@@ -52,7 +52,10 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
     val currentFileName by viewModel.currentFileName.collectAsStateWithLifecycle()
     val selectedTheme by viewModel.selectedTheme.collectAsStateWithLifecycle()
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
-    val htmlContent by viewModel.htmlContent.collectAsStateWithLifecycle()
+    // NOTE: htmlContent is intentionally NOT collected here. It is only needed
+    // by the preview WebView; collecting it at this level would recompose the
+    // entire screen (top bar, menus, editor) on every debounced re-render.
+    // Preview-only composables collect it directly instead.
     val parser = viewModel.parser
 
     var dialogState: DialogState by remember { mutableStateOf(DialogState.None) }
@@ -61,12 +64,19 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
 
     val notificationIdRef = remember { mutableIntStateOf(1001) }
     var pendingExportUri by remember { mutableStateOf<Uri?>(null) }
+    // Reuse one exporter across exports (it is stateless; each export creates
+    // its own WebView internally).
+    val pdfExporter = remember(context) { PdfExporter(context) }
 
     fun executeExport(uri: Uri) {
         val nid = notificationIdRef.intValue++
-        val printHtml = parser.toPrintHtml(markdownText, selectedTheme)
 
         scope.launch {
+            // Generate the print HTML off the main thread — for large
+            // documents this parsing step can take noticeable time.
+            val printHtml = withContext(Dispatchers.Default) {
+                parser.toPrintHtml(markdownText, selectedTheme)
+            }
             // Show a persistent progress snackbar without blocking the export coroutine.
             val snackbarJob = launch {
                 snackbarHostState.showSnackbar(
@@ -75,7 +85,7 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                 )
             }
             try {
-                val error = PdfExporter(context).export(
+                val error = pdfExporter.export(
                     htmlContent = printHtml,
                     uri = uri,
                     onProgress = { current, total ->
@@ -511,12 +521,9 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                 }
 
                 ViewMode.PREVIEW -> {
-                    MarkdownWebView(
-                        htmlContent = htmlContent,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
+                    MarkdownPreview(viewModel = viewModel, modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f))
                 }
 
                 ViewMode.SPLIT -> {
@@ -536,12 +543,9 @@ fun MdPdfScreen(viewModel: MdPdfViewModel) {
                         )
                     )
                     HorizontalDivider()
-                    MarkdownWebView(
-                        htmlContent = htmlContent,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
+                    MarkdownPreview(viewModel = viewModel, modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f))
                 }
             }
         }
@@ -570,7 +574,6 @@ private fun sharePdf(
     theme: MdTheme,
     parser: MarkdownParser
 ) {
-    val printHtml = parser.toPrintHtml(markdownText, theme)
     val name = "MdPdf_shared.pdf"
     val tempFile = File(context.cacheDir, name)
     try {
@@ -583,6 +586,9 @@ private fun sharePdf(
     val toast = Toast.makeText(context, Strings.generatingPdf, Toast.LENGTH_SHORT)
     toast.show()
     scope.launch {
+        val printHtml = withContext(Dispatchers.Default) {
+            parser.toPrintHtml(markdownText, theme)
+        }
         val error = PdfExporter(context).export(
             htmlContent = printHtml,
             uri = uri

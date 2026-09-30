@@ -7,15 +7,28 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import kotlinx.coroutines.delay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mdpdf.MdPdfViewModel
+
+/**
+ * Preview pane that collects [MdPdfViewModel.htmlContent] locally so that HTML
+ * re-renders recompose only this small subtree instead of the whole screen.
+ */
+@Composable
+fun MarkdownPreview(
+    viewModel: MdPdfViewModel,
+    modifier: Modifier = Modifier
+) {
+    val htmlContent by viewModel.htmlContent.collectAsStateWithLifecycle()
+    MarkdownWebView(
+        htmlContent = htmlContent,
+        modifier = modifier
+    )
+}
 
 @Suppress("FunctionName")
 @SuppressLint("SetJavaScriptEnabled")
@@ -27,17 +40,14 @@ fun MarkdownWebView(
     val context = LocalContext.current
     val filesBaseUrl = "file://${context.filesDir.absolutePath}/"
 
-    // Debounce: only reload the WebView after 300 ms of keystroke silence.
-    // LaunchedEffect cancels and restarts whenever htmlContent changes, so the
-    // delay resets on every keystroke and the WebView reloads only on pause.
-    var debouncedContent by remember { mutableStateOf(htmlContent) }
-    LaunchedEffect(htmlContent) {
-        delay(300)
-        debouncedContent = htmlContent
-    }
-
     AndroidView(
         modifier = modifier,
+        // NOTE: the WebView is intentionally NOT keyed on htmlContent — keeping
+        // the native view alive lets it reuse its in-memory asset cache across
+        // reloads. Only the update lambda re-loads the document.
+        update = { webView ->
+            webView.loadDataWithBaseURL(filesBaseUrl, htmlContent, "text/html", "UTF-8", null)
+        },
         factory = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
@@ -64,9 +74,6 @@ fun MarkdownWebView(
                     }
                 }
             }
-        },
-        update = { webView ->
-            webView.loadDataWithBaseURL(filesBaseUrl, debouncedContent, "text/html", "UTF-8", null)
         }
     )
 }
