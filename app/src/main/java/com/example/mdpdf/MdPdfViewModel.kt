@@ -13,11 +13,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * ViewModel for the main Markdown-to-PDF screen.
@@ -163,12 +166,19 @@ class MdPdfViewModel(
             }.stateIn(viewModelScope, SharingStarted.Eagerly, MdTheme.DEFAULT)
 
     val htmlContent: StateFlow<String> = combine(markdownText, selectedTheme) { text, theme ->
-        parser.toHtml(text, theme, settings.showErrorsInPdf)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = ""
-    )
+        text to theme
+    }
+        // Debounce parsing so rapid typing doesn't re-render the full HTML on
+        // every keystroke; the WebView reloads only after a short pause.
+        .debounce(300.milliseconds)
+        // Parsing is CPU-bound; keep it off the Main thread for large documents.
+        .map { (text, theme) -> parser.toHtml(text, theme, settings.showErrorsInPdf) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ""
+        )
 
     fun updateMarkdownText(text: String) {
         savedStateHandle[Constants.STATE_KEY_MARKDOWN_TEXT] = text

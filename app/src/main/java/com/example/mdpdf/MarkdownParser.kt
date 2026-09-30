@@ -28,10 +28,6 @@ enum class MdTheme(val label: String) {
  */
 class MarkdownParser {
 
-    private val mathRegex = Regex(
-        """(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\(.*?\\\)|\$(?:[^$\\]|\\.)*?\$)"""
-    )
-
     private val extensions = listOf(
         TablesExtension.create(),
         StrikethroughExtension.create(),
@@ -48,21 +44,111 @@ class MarkdownParser {
         .sanitizeUrls(true)
         .build()
 
+    /** Cache of fully-rendered HTML shells keyed by (theme, isPrint, showErrors). */
+    private val shellCache = java.util.concurrent.ConcurrentHashMap<Triple<MdTheme, Boolean, Boolean>, Pair<String, String>>()
+
+    /**
+     * Single linear scan that replaces KaTeX math spans with non-breaking-space
+     * protected placeholders so CommonMark leaves them untouched. This avoids
+     * both catastrophic backtracking of the previous alternation regex and the
+     * O(mathBlocks x htmlSize) rescans of the old restore step.
+     */
     private fun extractAndProtectMath(markdown: String): Pair<String, List<String>> {
         val blocks = mutableListOf<String>()
-        val result = mathRegex.replace(markdown) { match ->
-            blocks.add(match.value)
-            "\u00A0MATH${blocks.lastIndex}\u00A0"
+        val sb = StringBuilder(markdown.length)
+        var i = 0
+        val n = markdown.length
+        while (i < n) {
+            val c = markdown[i]
+            if (c == '\\') {
+                val nxt = if (i + 1 < n) markdown[i + 1] else ' '
+                if (nxt == '(' || nxt == '[') {
+                    val close = if (nxt == '(') "\\)" else "\\]"
+                    val end = markdown.indexOf(close, startIndex = i + 2)
+                    if (end >= 0) {
+                        blocks.add(markdown.substring(i, end + close.length))
+                        appendPlaceholder(sb, blocks.lastIndex)
+                        i = end + close.length
+                        continue
+                    }
+                }
+                sb.append(c)
+                if (i + 1 < n) sb.append(markdown[i + 1])
+                i += 2
+            } else if (c == '$') {
+                if (markdown.startsWith("$$", i)) {
+                    val end = markdown.indexOf("$$", startIndex = i + 2)
+                    if (end >= 0) {
+                        blocks.add(markdown.substring(i, end + 2))
+                        appendPlaceholder(sb, blocks.lastIndex)
+                        i = end + 2
+                    } else {
+                        // Unterminated $$ — emit as text (matches old regex behaviour).
+                        sb.append("$$").append(markdown.getOrElse(i + 2) { ' ' })
+                        i += 3
+                    }
+                } else {
+                    var j = i + 1
+                    var found = false
+                    while (j < n) {
+                        val cj = markdown[j]
+                        if (cj == '\\') {
+                            j += 2
+                            continue
+                        }
+                        if (cj == '$') {
+                            // Don't treat "$$" display-openers as inline closers.
+                            if (!markdown.startsWith("$$", j)) {
+                                blocks.add(markdown.substring(i, j + 1))
+                                appendPlaceholder(sb, blocks.lastIndex)
+                                i = j + 1
+                                found = true
+                            }
+                            break
+                        }
+                        j++
+                    }
+                    if (!found) {
+                        sb.append(c)
+                        i++
+                    }
+                }
+            } else {
+                sb.append(c)
+                i++
+            }
         }
-        return result to blocks
+        return sb.toString() to blocks
     }
 
+    private fun appendPlaceholder(sb: StringBuilder, index: Int) {
+        sb.append('\u00A0').append("MATH").append(index).append('\u00A0')
+    }
+
+    /**
+     * Restores math blocks in one pass by scanning for "MATH<digits>" tokens
+     * instead of running [String.replace] once per block over the whole HTML.
+     */
     private fun restoreMath(html: String, blocks: List<String>): String {
-        var result = html
-        blocks.forEachIndexed { index, math ->
-            result = result.replace("\u00A0MATH${index}\u00A0", math)
+        if (blocks.isEmpty()) return html
+        val sb = StringBuilder(html.length)
+        var i = 0
+        val n = html.length
+        while (i < n) {
+            if (html[i] == 'M' && html.startsWith("MATH", i)) {
+                var j = i + 4
+                while (j < n && html[j].isDigit()) j++
+                val idx = html.substring(i + 4, j).toIntOrNull()
+                if (idx != null && idx < blocks.size) {
+                    sb.append(blocks[idx])
+                    i = j
+                    continue
+                }
+            }
+            sb.append(html[i])
+            i++
         }
-        return result
+        return sb.toString()
     }
 
     fun toHtml(markdown: String, theme: MdTheme = MdTheme.DEFAULT, showErrors: Boolean = true): String {
@@ -81,7 +167,20 @@ class MarkdownParser {
         return wrapWithTemplate(restored, theme, isPrint = true, showErrors = showErrors)
     }
 
+    /**
+     * Returns the cached (head, tail) template pair for the given options. The
+     * static CSS/JS shell is built at most once per (theme, isPrint, showErrors)
+     * combination; only the body is interpolated per render.
+     */
+    private fun shellFor(theme: MdTheme, isPrint: Boolean, showErrors: Boolean): Pair<String, String> =
+        shellCache.getOrPut(Triple(theme, isPrint, showErrors)) { buildShell(theme, isPrint, showErrors) }
+
     private fun wrapWithTemplate(bodyHtml: String, theme: MdTheme, isPrint: Boolean, showErrors: Boolean): String {
+        val (head, tail) = shellFor(theme, isPrint, showErrors)
+        return head + bodyHtml + tail
+    }
+
+    private fun buildShell(theme: MdTheme, isPrint: Boolean, showErrors: Boolean): Pair<String, String> {
         val themeCss = when (theme) {
             MdTheme.ACADEMIC -> ACADEMIC_CSS
             MdTheme.DARK -> DARK_CSS
@@ -99,7 +198,7 @@ class MarkdownParser {
         val errorHideCss = if (showErrors) "" else ".katex-error { display: none !important; }"
 
         if (isPrint) {
-            return """<!DOCTYPE html>
+            val head = """<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=595,initial-scale=1.0"/>
@@ -111,7 +210,8 @@ $themeCss
 $errorHideCss
 </style>
 </head><body>
-$bodyHtml
+"""
+            val tail = """
 <script src="$PRISM_JS"></script>
 <script src="$PRISM_AUTOLOADER"></script>
 <script src="$KATEX_JS"></script>
@@ -175,9 +275,10 @@ tryRender(1)
 })
 </script>
 </body></html>"""
+            return head to tail
         }
 
-        return """<!DOCTYPE html>
+        val head = """<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
@@ -189,7 +290,8 @@ $themeCss
 $errorHideCss
 </style>
 </head><body>
-$bodyHtml
+"""
+        val tail = """
 <script src="$PRISM_JS"></script>
 <script src="$PRISM_AUTOLOADER"></script>
 <script src="$KATEX_JS"></script>
@@ -198,7 +300,6 @@ $bodyHtml
 if(typeof Prism!=='undefined'&&Prism.plugins&&Prism.plugins.autoloader){
   Prism.plugins.autoloader.languages_path = 'file:///android_asset/prism/components/';
   }
-  console.log('MdPdf: scripts starting, katex='+typeof katex+', renderMathInElement='+typeof renderMathInElement)
 function addCodeHeaders(){
 var pres=document.querySelectorAll('pre[class*="language-"]');
 if(pres.length===0) pres=document.querySelectorAll('pre code[class*="language-"]');
@@ -232,7 +333,6 @@ pre.parentNode.insertBefore(header,pre);
 }
 function tryRender(attempt){
 if(typeof renderMathInElement!=='undefined'&&typeof katex!=='undefined'){
-console.log('MdPdf: rendering math (attempt '+attempt+')')
 try{
 renderMathInElement(document.body,{delimiters:[
 {left:'$$',right:'$$',display:true},
@@ -240,19 +340,17 @@ renderMathInElement(document.body,{delimiters:[
 {left:'\\(',right:'\\)',display:false},
 {left:'\\[',right:'\\]',display:true}
 ]})
-console.log('MdPdf: math rendered successfully')
 }catch(e){console.error('MdPdf: render error',e)}
-}else if(attempt<10){
-console.warn('MdPdf: KaTeX not ready (attempt '+attempt+'), retrying...')
-window.setTimeout(function(){tryRender(attempt+1)},1000)
+}else if(attempt<20){
+window.setTimeout(function(){tryRender(attempt+1)},500)
 }else{
-console.error('MdPdf: KaTeX failed to load after 10 attempts')
+console.error('MdPdf: KaTeX failed to load')
 }
 }
 document.addEventListener('DOMContentLoaded',function(){
 if(typeof Prism!=='undefined'){Prism.highlightAll()}
 addCodeHeaders()
-window.setTimeout(function(){tryRender(1)},500)
+window.setTimeout(function(){tryRender(1)},200)
 })
 </script>
 </body></html>"""
