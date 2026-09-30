@@ -52,14 +52,79 @@ class MarkdownParser {
      * protected placeholders so CommonMark leaves them untouched. This avoids
      * both catastrophic backtracking of the previous alternation regex and the
      * O(mathBlocks x htmlSize) rescans of the old restore step.
+     *
+     * Fenced code blocks (``` / ~~~), indented code blocks, and inline code
+     * spans (`...`) are copied through verbatim without any math extraction,
+     * so dollar signs inside code never trigger a placeholder swap.
      */
     private fun extractAndProtectMath(markdown: String): Pair<String, List<String>> {
         val blocks = mutableListOf<String>()
         val sb = StringBuilder(markdown.length)
         var i = 0
+        var lineStart = true
+        var pendingFenceMarker: String? = null
+        var inIndentedCode = false
         val n = markdown.length
+
         while (i < n) {
             val c = markdown[i]
+
+            // --- line-boundary bookkeeping -----------------------------------
+            if (c == '\n') {
+                sb.append(c)
+                i++
+                lineStart = true
+                inIndentedCode = false
+                continue
+            }
+
+            if (lineStart) {
+                // Detect fence open/close at the start of a line.
+                val marker = fenceMarkerAt(markdown, i)
+                val fence = pendingFenceMarker
+                if (marker != null && (fence == null || marker == fence)) {
+                    pendingFenceMarker = if (fence == null) marker else null
+                    inIndentedCode = false
+                    val eol = markdown.indexOf('\n', startIndex = i).let { if (it >= 0) it else n }
+                    sb.append(markdown, i, eol)
+                    i = eol
+                    continue
+                }
+                if (fence == null) {
+                    // 4-space indented code block: copy the whole line verbatim.
+                    val isIndented = markdown.startsWith("    ", i) || markdown.startsWith("\t", i)
+                    inIndentedCode = isIndented
+                    if (isIndented) {
+                        val eol = markdown.indexOf('\n', startIndex = i).let { if (it >= 0) it else n }
+                        sb.append(markdown, i, eol)
+                        i = eol
+                        continue
+                    }
+                }
+                lineStart = false
+            }
+
+            // Inside any kind of code region: copy verbatim until end of line.
+            if (pendingFenceMarker != null || inIndentedCode) {
+                sb.append(c)
+                i++
+                continue
+            }
+
+            // Inline code span: copy `backticked text` verbatim.
+            if (c == '`') {
+                val run = runLength(markdown, i, '`')
+                val closer = findClosingRun(markdown, i + run, '`', run)
+                if (closer >= 0) {
+                    sb.append(markdown, i, closer + run)
+                    i = closer + run
+                    continue
+                }
+                sb.append(c)
+                i++
+                continue
+            }
+
             if (c == '\\') {
                 val nxt = if (i + 1 < n) markdown[i + 1] else ' '
                 if (nxt == '(' || nxt == '[') {
@@ -119,6 +184,37 @@ class MarkdownParser {
             }
         }
         return sb.toString() to blocks
+    }
+
+    /** Returns the fence marker ("```" or "~~~") starting at [index], if any. */
+    private fun fenceMarkerAt(markdown: String, index: Int): String? {
+        val c = markdown.getOrNull(index) ?: return null
+        if (c != '`' && c != '~') return null
+        val run = runLength(markdown, index, c)
+        return if (run >= 3) c.toString().repeat(3) else null
+    }
+
+    private fun runLength(s: String, from: Int, ch: Char): Int {
+        var k = from
+        val n = s.length
+        while (k < n && s[k] == ch) k++
+        return k - from
+    }
+
+    /** Index of the next run of exactly [run] occurrences of [ch] at/after [from], or -1. */
+    private fun findClosingRun(s: String, from: Int, ch: Char, run: Int): Int {
+        var k = from
+        val n = s.length
+        while (k < n) {
+            if (s[k] == ch) {
+                val len = runLength(s, k, ch)
+                if (len == run) return k
+                k += len
+                continue
+            }
+            k++
+        }
+        return -1
     }
 
     private fun appendPlaceholder(sb: StringBuilder, index: Int) {
@@ -354,6 +450,7 @@ window.setTimeout(function(){tryRender(1)},200)
 })
 </script>
 </body></html>"""
+        return head to tail
     }
 }
 
