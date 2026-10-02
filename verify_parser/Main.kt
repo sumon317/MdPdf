@@ -69,9 +69,12 @@ fun main() {
     html = p.toHtml("t", MdTheme.DEFAULT, showErrors = true)
     check("show errors css absent", !html.contains("display: none !important"))
 
-    // code block containing $ should not break math extraction
+    // code block containing $ should not break math extraction.
+    // NOTE: CommonMark's HtmlRenderer escapes `"` to `&quot;` inside <code>,
+    // so assert on the escaped form — the real invariant is that the `$`
+    // signs survive verbatim (no NBSP/MATH placeholder corruption).
     html = p.toHtml("```\ncost = \"$10\" + \"$20\"\n```")
-    check("code block preserved", html.contains("\"$10\"") && html.contains("\"$20\""))
+    check("code block preserved", html.contains("&quot;$10&quot;") && html.contains("&quot;$20&quot;"))
 
     // user text that literally contains MATH0 must not be corrupted wrongly nor crash
     html = p.toHtml("word MATH0 end $d x^2$d")
